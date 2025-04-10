@@ -1,12 +1,11 @@
 ﻿import os
 import re
-import asyncio
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import Application, ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # --- Load environment variables ---
 load_dotenv()
@@ -14,56 +13,45 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_NAME = "RDMNTL_session"  # Saved locally by Telethon
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
-# --- Chat username ---
+# --- Chat username and link pattern ---
 from_chat_id = 'NLPTST'
-
-# --- Link pattern for only RadioMontelloChat ---
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# Flask app for streaming
+# Flask app for handling webhook and file streaming
 app = Flask(__name__)
 
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook endpoint for Telegram bot"""
+    data = request.json
+    update = Update.de_json(data, bot)
+    app.update_queue.put(update)
+    return "OK", 200
 
-
-# Route to stream files
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
+    """Route to stream MP3 files"""
     async def get_stream():
         async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-            # Use the bot token to authenticate
             await client.start(bot_token=BOT_TOKEN)
-
-            # Fetch the message from the NLPTST chat
             message = await client.get_messages(from_chat_id, ids=message_id)
-
             if not isinstance(message.media, MessageMediaDocument):
                 return "Message does not contain a valid document", 404
-
             doc: Document = message.media.document
             if doc.mime_type != 'audio/mpeg':
                 return "File is not an MP3", 415
-
-            # Download the file to a temporary location
             temp_file_path = f"/tmp/{doc.id}.mp3"
             await client.download_media(message, file=temp_file_path)
 
-            # Stream the file directly
             def generate():
                 with open(temp_file_path, "rb") as f:
                     while chunk := f.read(1024):
                         yield chunk
-
             return Response(generate(), content_type='audio/mpeg')
 
-    # Use asyncio.run_coroutine_threadsafe to run the coroutine in the event loop
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(get_stream())
-
-
-
-
-
+    return asyncio.run(get_stream())
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -76,47 +64,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚀 Let's get started! Send me a link now!"
     )
 
-
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message.text
     match = link_pattern.match(msg)
-
     if not match:
         await update.message.reply_text(f"⚠️ Invia solo link validi da https://t.me/{from_chat_id}")
         return
-
     message_id = int(match.group(1))
-
     try:
-        # Generate a streaming link for the file
-        stream_url = f"https://rdmntlfiletolink.onrender.com/stream/{message_id}"
+        stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
         await update.message.reply_text(f"🎧 Ecco il link per lo streaming:\n{stream_url}")
-
     except Exception as e:
-        print("Errore:", e)
+        print("Error:", e)
         await update.message.reply_text("Errore durante l'elaborazione del link. Assicurati che il file sia accessibile.")
 
-
-# Simple home route
 @app.route('/')
 def home():
     return "Welcome to the Telegram MP3 Streamer!"
 
-
-
 if __name__ == '__main__':
-    # Start Flask app in a separate thread
+    # Start Flask app
     from threading import Thread
     def run_flask():
         app.run(host='0.0.0.0', port=5000)
-
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
 
-    # Start Telegram bot
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
-
-    print("✅ Bot is running...")
-    app.run_polling()
+    # Start Telegram bot using webhook
+    bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    bot.add_handler(CommandHandler("start", start))
+    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+    bot.run_webhook(
+        listen="0.0.0.0",
+        port=5000,
+        webhook_url=f"{WEBHOOK_URL}/webhook"
+    )
