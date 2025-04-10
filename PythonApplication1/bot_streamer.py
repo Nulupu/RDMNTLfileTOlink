@@ -26,6 +26,9 @@ app = Flask(__name__)
 
 
 
+
+import asyncio
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook endpoint for Telegram bot"""
@@ -37,15 +40,14 @@ def webhook():
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
-        # Use asyncio.run to await the asynchronous process_update method
-        asyncio.run(bot.process_update(update))
+        # Use asyncio.create_task to process the update asynchronously
+        asyncio.get_event_loop().create_task(bot.process_update(update))
     except Exception as e:
         print(f"Error processing update: {e}")  # Log any errors
         return "Internal Server Error", 500
 
     return "OK", 200
 
-     
 
 
 
