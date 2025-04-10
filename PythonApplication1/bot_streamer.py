@@ -24,11 +24,15 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app for streaming
 app = Flask(__name__)
 
+
 # Route to stream files
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
     async def get_stream():
         async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+            # Use the bot token to authenticate
+            await client.start(bot_token=BOT_TOKEN)
+
             # Fetch the message from the NLPTST chat
             message = await client.get_messages(from_chat_id, ids=message_id)
 
@@ -48,6 +52,8 @@ def stream_file(message_id):
             return Response(generate(), content_type='audio/mpeg')
 
     return asyncio.run(get_stream())
+
+
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
