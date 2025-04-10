@@ -74,7 +74,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         # Generate a streaming link for the file
-        stream_url = f"https://your-render-service.com/stream/{message_id}"
+        stream_url = f"https://xxx.com/stream/{message_id}"
         await update.message.reply_text(f"🎧 Ecco il link per lo streaming:\n{stream_url}")
 
     except Exception as e:
