@@ -27,15 +27,23 @@ app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook endpoint for Telegram bot"""
-    data = request.json
+    data = request.get_json(silent=True)  # Use get_json with silent=True to avoid exceptions
+    if not data:
+        print("No JSON data received or malformed request")  # Debugging
+        return "Bad Request: No JSON data received", 400
+
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
         bot.process_update(update)  # Process the update
     except Exception as e:
         print(f"Error processing update: {e}")  # Log any errors
+        return "Internal Server Error", 500
+
     return "OK", 200
      
+
+
 
 
 @app.route('/stream/<int:message_id>')
