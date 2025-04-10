@@ -29,11 +29,14 @@ app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook endpoint for Telegram bot"""
-    data = request.json
-    update = Update.de_json(data, bot)
-    app.update_queue.put(update)
-    return "OK", 200
+	"""Webhook endpoint for Telegram bot"""	
+	data = request.json	
+	print(f"Incoming update: {data}")  # Debugging
+	update = Update.de_json(data, bot)
+	app.update_queue.put(update)
+	return "OK", 200
+     
+
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
