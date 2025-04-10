@@ -2,3 +2,5 @@ flask
 telethon
 requests
 python-dotenv
+aiohttp
+python-telegram-bot
