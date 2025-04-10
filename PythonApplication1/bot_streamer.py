@@ -15,10 +15,7 @@ API_HASH = os.getenv("API_HASH")
 SESSION_NAME = "RDMNTL_session"  # Saved locally by Telethon
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
-print(f"BOT_TOKEN: {BOT_TOKEN}")
-print(f"API_ID: {API_ID}")
-print(f"API_HASH: {API_HASH}")
-print(f"WEBHOOK_URL: {WEBHOOK_URL}")
+
    
 # --- Chat username and link pattern ---
 from_chat_id = 'NLPTST'
@@ -32,7 +29,14 @@ def webhook():
     """Webhook endpoint for Telegram bot"""
     data = request.json
     print(f"Incoming update: {data}")  # Debugging
+    try:
+        update = Update.de_json(data, bot)
+        bot.process_update(update)  # Process the update
+    except Exception as e:
+        print(f"Error processing update: {e}")  # Log any errors
     return "OK", 200
+     
+
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
