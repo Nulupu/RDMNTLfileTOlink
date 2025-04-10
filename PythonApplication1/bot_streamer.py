@@ -82,6 +82,13 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Errore durante l'elaborazione del link. Assicurati che il file sia accessibile.")
 
 
+# Simple home route
+@app.route('/')
+def home():
+    return "Welcome to the Telegram MP3 Streamer!"
+
+
+
 if __name__ == '__main__':
     # Start Flask app in a separate thread
     from threading import Thread
