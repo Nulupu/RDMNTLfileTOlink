@@ -58,6 +58,14 @@ def telegram_webhook():
     return jsonify({"stream_url": stream_url}), 200
 
 
+
+@app.route('/')
+def home():
+    return "Welcome to the Telegram MP3 Streamer!"
+
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))  # Default to 8000 if not set
     app.run(debug=True, host='0.0.0.0', port=port)
+
