@@ -29,14 +29,10 @@ app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-	"""Webhook endpoint for Telegram bot"""	
-	data = request.json	
-	print(f"Incoming update: {data}")  # Debugging
-	update = Update.de_json(data, bot)
-	app.update_queue.put(update)
-	return "OK", 200
-     
-
+    """Webhook endpoint for Telegram bot"""
+    data = request.json
+    print(f"Incoming update: {data}")  # Debugging
+    return "OK", 200
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
@@ -94,7 +90,7 @@ if __name__ == '__main__':
     # Start Flask app
     from threading import Thread
     def run_flask():
-        app.run(host='0.0.0.0', port=10000)
+        app.run(host='0.0.0.0', port=10000)  # Use a different port for Flask
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
 
@@ -104,6 +100,7 @@ if __name__ == '__main__':
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
     bot.run_webhook(
         listen="0.0.0.0",
-        port=10000,
+        port=11000,  # Use a different port for the bot
         webhook_url=f"{WEBHOOK_URL}/webhook"
     )
+
