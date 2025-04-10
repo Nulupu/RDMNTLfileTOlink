@@ -25,6 +25,7 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 app = Flask(__name__)
 
 
+
 # Route to stream files
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
@@ -43,15 +44,23 @@ def stream_file(message_id):
             if doc.mime_type != 'audio/mpeg':
                 return "File is not an MP3", 415
 
+            # Download the file to a temporary location
+            temp_file_path = f"/tmp/{doc.id}.mp3"
+            await client.download_media(message, file=temp_file_path)
+
             # Stream the file directly
             def generate():
-                with open(doc.file_path, "rb") as f:
+                with open(temp_file_path, "rb") as f:
                     while chunk := f.read(1024):
                         yield chunk
 
             return Response(generate(), content_type='audio/mpeg')
 
-    return asyncio.run(get_stream())
+    # Use asyncio.run_coroutine_threadsafe to run the coroutine in the event loop
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(get_stream())
+
+
 
 
 
