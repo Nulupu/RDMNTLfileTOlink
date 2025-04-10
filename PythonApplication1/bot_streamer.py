@@ -57,5 +57,7 @@ def telegram_webhook():
     stream_url = f"{request.url_root}stream/{message_id}"
     return jsonify({"stream_url": stream_url}), 200
 
+
 if __name__ == '__main__':
-    app.run(debug=True, port=8000)
+    port = int(os.environ.get('PORT', 8000))  # Default to 8000 if not set
+    app.run(debug=True, host='0.0.0.0', port=port)
