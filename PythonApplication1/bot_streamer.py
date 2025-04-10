@@ -15,6 +15,11 @@ API_HASH = os.getenv("API_HASH")
 SESSION_NAME = "RDMNTL_session"  # Saved locally by Telethon
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
+print(f"BOT_TOKEN: {BOT_TOKEN}")
+print(f"API_ID: {API_ID}")
+print(f"API_HASH: {API_HASH}")
+print(f"WEBHOOK_URL: {WEBHOOK_URL}")
+   
 # --- Chat username and link pattern ---
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
@@ -96,6 +101,6 @@ if __name__ == '__main__':
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
     bot.run_webhook(
         listen="0.0.0.0",
-        port=5000,
+        port=10000,
         webhook_url=f"{WEBHOOK_URL}/webhook"
     )
