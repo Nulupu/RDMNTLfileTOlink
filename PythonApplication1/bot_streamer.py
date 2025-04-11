@@ -103,17 +103,25 @@ def home():
     return "Welcome to the Telegram MP3 Streamer!"
 
 # --- Main ---
+def run_flask():
+    app.run(host='0.0.0.0', port=10000, use_reloader=False)
+
+def run_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(init_bot())
+
 if __name__ == '__main__':
     # Start Flask in a separate thread
-    def run_flask():
-        app.run(host='0.0.0.0', port=10000, use_reloader=False)
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True  # Ensure Flask thread exits when the main thread exits
+    flask_thread.start()
 
-    # Initialize bot with asyncio.run() to ensure the event loop is managed properly
-    asyncio.run(init_bot())
+    # Start bot (asyncio)
+    bot_thread = Thread(target=run_bot)
+    bot_thread.daemon = True  # Ensure bot thread exits when the main thread exits
+    bot_thread.start()
 
-    # Start Flask app and thread for the bot
-    Thread(target=run_flask).start()
-
-    # Prevent script from exiting
+    # Main thread should wait so the Flask and bot threads run
     while True:
         time.sleep(10)
