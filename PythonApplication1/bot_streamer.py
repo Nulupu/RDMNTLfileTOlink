@@ -10,6 +10,9 @@ from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from threading import Thread
 import nest_asyncio
+import telegram
+telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
+
 
 # --- Init ---
 load_dotenv()
@@ -31,21 +34,11 @@ app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.get_json(silent=True)
-    print(f"Incoming request: {data}")  # Debugging
-    if not data:
-        return "Bad Request: No JSON data received", 400
-
-    try:
-        update = Update.de_json(data, bot.bot)
-        asyncio.run_coroutine_threadsafe(bot.process_update(update), asyncio.get_event_loop())
-    except Exception as e:
-        import traceback
-        print(f"Error processing update: {e}")
-        print(traceback.format_exc())
-        return "Internal Server Error", 500
-
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot.bot)
+    asyncio.run(bot.process_update(update))
     return "OK", 200
+
      
 
 
@@ -122,12 +115,12 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=10000)
     Thread(target=run_flask).start()
 
-    # Start Telegram bot with webhook
+    # Setup Telegram bot
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
-    bot.run_webhook(
-        listen="0.0.0.0",
-        port=11000,
-        webhook_url=f"{WEBHOOK_URL}/webhook"
-    )
+
+    # Set webhook (run this once or protect with flag)
+    bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+
+    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
