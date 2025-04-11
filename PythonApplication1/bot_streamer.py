@@ -25,8 +25,6 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 app = Flask(__name__)
 
 
-
-
 import asyncio
 
 @app.route('/webhook', methods=['POST'])
@@ -40,8 +38,9 @@ def webhook():
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
-        # Use asyncio.create_task to process the update asynchronously
-        asyncio.get_event_loop().create_task(bot.process_update(update))
+        # Use asyncio.run_coroutine_threadsafe to process the update in the main event loop
+        loop = asyncio.get_event_loop()
+        asyncio.run_coroutine_threadsafe(bot.process_update(update), loop)
     except Exception as e:
         print(f"Error processing update: {e}")  # Log any errors
         return "Internal Server Error", 500
