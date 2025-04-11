@@ -1,17 +1,15 @@
 ﻿import os
 import re
 import asyncio
-import time
 from io import BytesIO
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 import telegram
-from threading import Thread
 
 # --- Init ---
 load_dotenv()
@@ -27,9 +25,6 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
 # Flask app
 app = Flask(__name__)
-
-# Declare the bot as a global variable
-bot = None
 
 # --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -59,8 +54,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Bot Initialization ---
 async def init_bot():
-    global bot  # Access global bot variable
-    bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    bot = Application.builder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
 
@@ -72,7 +66,6 @@ async def init_bot():
 # --- Webhook endpoint ---
 @app.route('/webhook', methods=['POST'])
 async def webhook():
-    global bot  # Access the global bot variable
     data = request.get_json(force=True)
     update = Update.de_json(data, bot.bot)
 
@@ -108,25 +101,22 @@ def home():
     return "Welcome to the Telegram MP3 Streamer!"
 
 # --- Main ---
-def run_flask():
-    app.run(host='0.0.0.0', port=10000, use_reloader=False)
-
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(init_bot())
-
 if __name__ == '__main__':
-    # Start Flask in a separate thread
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True  # Ensure Flask thread exits when the main thread exits
-    flask_thread.start()
+    # Initialize bot and start Flask app with asyncio.run()
+    async def main():
+        bot = await init_bot()
+        from threading import Thread
 
-    # Start bot (asyncio)
-    bot_thread = Thread(target=run_bot)
-    bot_thread.daemon = True  # Ensure bot thread exits when the main thread exits
-    bot_thread.start()
+        # Run Flask app in a separate thread
+        def run_flask():
+            app.run(host='0.0.0.0', port=10000)
 
-    # Main thread should wait so the Flask and bot threads run
-    while True:
-        time.sleep(10)
+        # Start Flask app and Thread for the bot
+        Thread(target=run_flask).start()
+
+        # Prevent script from exiting
+        while True:
+            await asyncio.sleep(10)  # Non-blocking wait
+
+    # Run everything using asyncio
+    asyncio.run(main())
