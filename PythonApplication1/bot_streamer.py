@@ -26,7 +26,7 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app
 app = Flask(__name__)
 
-@app.route('/webhook', methods=['POST'])
+@app.route('/', methods=['POST'])
 def webhook():
     data = request.get_json(silent=True)
     if not data:
