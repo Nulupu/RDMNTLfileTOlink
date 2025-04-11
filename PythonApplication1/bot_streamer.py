@@ -28,6 +28,9 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app
 app = Flask(__name__)
 
+# Declare the bot as a global variable
+bot = None
+
 # --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -56,6 +59,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Bot Initialization ---
 async def init_bot():
+    global bot  # Access global bot variable
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
@@ -68,6 +72,7 @@ async def init_bot():
 # --- Webhook endpoint ---
 @app.route('/webhook', methods=['POST'])
 async def webhook():
+    global bot  # Access the global bot variable
     data = request.get_json(force=True)
     update = Update.de_json(data, bot.bot)
 
