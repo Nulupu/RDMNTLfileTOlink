@@ -1,5 +1,6 @@
 ﻿import os
 import re
+import asyncio
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
@@ -15,8 +16,6 @@ API_HASH = os.getenv("API_HASH")
 SESSION_NAME = "RDMNTL_session"  # Saved locally by Telethon
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
-
-   
 # --- Chat username and link pattern ---
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
@@ -24,11 +23,17 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app for handling webhook and file streaming
 app = Flask(__name__)
 
-import asyncio
-
 # Create a global event loop for the bot
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
+# Start the global event loop in a separate thread
+def start_event_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+event_loop_thread = Thread(target=start_event_loop, daemon=True)
+event_loop_thread.start()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -44,16 +49,12 @@ def webhook():
         # Use asyncio.run_coroutine_threadsafe to process the update in the global event loop
         asyncio.run_coroutine_threadsafe(bot.process_update(update), loop)
     except Exception as e:
-        print(f"Error processing update: {e}")  # Log any errors
+        import traceback
+        print(f"Error processing update: {e}")  # Log the error message
+        print(traceback.format_exc())  # Log the full traceback
         return "Internal Server Error", 500
 
     return "OK", 200
-
-
-
-
-
-
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
