@@ -24,8 +24,11 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app for handling webhook and file streaming
 app = Flask(__name__)
 
-
 import asyncio
+
+# Create a global event loop for the bot
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -38,14 +41,15 @@ def webhook():
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
-        # Use asyncio.run_coroutine_threadsafe to process the update in the main event loop
-        loop = asyncio.get_event_loop()
+        # Use asyncio.run_coroutine_threadsafe to process the update in the global event loop
         asyncio.run_coroutine_threadsafe(bot.process_update(update), loop)
     except Exception as e:
         print(f"Error processing update: {e}")  # Log any errors
         return "Internal Server Error", 500
 
     return "OK", 200
+
+
 
 
 
