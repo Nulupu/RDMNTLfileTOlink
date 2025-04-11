@@ -91,6 +91,10 @@ async def webhook():
     return "OK", 200
 
 # --- MP3 streaming endpoint ---
+
+
+
+
 @app.route('/stream/<int:message_id>')
 async def stream_file(message_id):
     async def get_stream():
@@ -99,23 +103,31 @@ async def stream_file(message_id):
                 await client.start(bot_token=BOT_TOKEN)
                 message = await client.get_messages(from_chat_id, ids=message_id)
 
+                logger.info(f"Message found: {message.text}")  # Log the message content for debugging
+
                 if not isinstance(message.media, MessageMediaDocument):
+                    logger.error("Not a valid document")
                     return Response("Not a valid document", status=404)
 
                 doc: Document = message.media.document
                 if doc.mime_type != 'audio/mpeg':
+                    logger.error(f"Invalid MIME type: {doc.mime_type}")
                     return Response("File is not an MP3", status=415)
 
                 stream = BytesIO()
                 await client.download_media(message, file=stream)
                 stream.seek(0)
 
+                logger.info("Streaming the audio file...")
                 return Response(stream, content_type='audio/mpeg')
         except Exception as e:
             logger.error(f"[STREAM ERROR] {e}", exc_info=True)
             return Response("Errore durante lo streaming.", status=500)
 
     return await get_stream()
+
+
+
 
 # --- Root page ---
 @app.route('/')
