@@ -26,9 +26,13 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app
 app = Flask(__name__)
 
+
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(silent=True)
+    print(f"Incoming request: {data}")  # Debugging
     if not data:
         return "Bad Request: No JSON data received", 400
 
@@ -42,6 +46,14 @@ def webhook():
         return "Internal Server Error", 500
 
     return "OK", 200
+     
+
+
+
+
+
+
+
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
