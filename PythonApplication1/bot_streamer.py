@@ -10,9 +10,6 @@ from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from threading import Thread
 import nest_asyncio
-import telegram
-telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
-
 
 # --- Init ---
 load_dotenv()
@@ -25,6 +22,10 @@ SESSION_NAME = "RDMNTL_session"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
+
+import telegram
+
+telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
 
 # Flask app
 app = Flask(__name__)
