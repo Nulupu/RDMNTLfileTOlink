@@ -25,9 +25,6 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# Set webhook (once)
-telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
-
 # Flask app
 app = Flask(__name__)
 
@@ -57,23 +54,29 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Error:", e)
         await update.message.reply_text("Errore nel generare il link di streaming.")
 
-# Build bot application
-bot = ApplicationBuilder().token(BOT_TOKEN).build()
-bot.add_handler(CommandHandler("start", start))
-bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+# --- Bot Initialization ---
+async def init_bot():
+    bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    bot.add_handler(CommandHandler("start", start))
+    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+
+    # Initialize and set webhook asynchronously
+    await bot.initialize()
+    await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+    return bot
 
 # --- Webhook endpoint ---
 @app.route('/webhook', methods=['POST'])
-def webhook():
+async def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, bot.bot)
 
-    asyncio.run(bot.process_update(update))
+    await bot.process_update(update)
     return "OK", 200
 
 # --- MP3 streaming endpoint ---
 @app.route('/stream/<int:message_id>')
-def stream_file(message_id):
+async def stream_file(message_id):
     async def get_stream():
         async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
             await client.start(bot_token=BOT_TOKEN)
@@ -92,7 +95,7 @@ def stream_file(message_id):
 
             return Response(stream, content_type='audio/mpeg')
 
-    return asyncio.run(get_stream())
+    return await get_stream()
 
 # --- Root page ---
 @app.route('/')
@@ -104,8 +107,14 @@ if __name__ == '__main__':
     # Start Flask in a separate thread
     def run_flask():
         app.run(host='0.0.0.0', port=10000)
+
+    # Initialize bot
+    loop = asyncio.get_event_loop()
+    bot = loop.run_until_complete(init_bot())
+
+    # Start Flask app and thread for the bot
     Thread(target=run_flask).start()
 
-    # Keep the script alive (important for Render)
+    # Prevent script from exiting
     while True:
         time.sleep(10)
