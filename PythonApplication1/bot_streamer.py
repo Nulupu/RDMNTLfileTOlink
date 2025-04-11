@@ -37,11 +37,16 @@ app = Flask(__name__)
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, bot.bot)
-    asyncio.run(bot.process_update(update))
+
+    async def handle_update():
+        try:
+            await bot.initialize()
+        except RuntimeError:
+            pass  # Already initialized
+        await bot.process_update(update)
+
+    asyncio.run(handle_update())
     return "OK", 200
-
-     
-
 
 
 
