@@ -35,8 +35,8 @@ def webhook():
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
-        # Process the update asynchronously
-        asyncio.create_task(bot.process_update(update))
+        # Use asyncio.run_coroutine_threadsafe to process the update in the main event loop
+        asyncio.run_coroutine_threadsafe(bot.process_update(update), asyncio.get_event_loop())
     except Exception as e:
         import traceback
         print(f"Error processing update: {e}")  # Log the error message
