@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 import telegram
+from threading import Thread  # <-- Add this import
 
 # --- Init ---
 load_dotenv()
