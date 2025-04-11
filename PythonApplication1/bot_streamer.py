@@ -26,15 +26,22 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app
 app = Flask(__name__)
 
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(silent=True)
     if not data:
-        return "Bad Request: No JSON data received", 400
+        return "Bad Request: No JSON", 400
 
     try:
-        update = Update.de_json(data, bot.bot)
+        # Create a telegram.Bot instance
+        tg_bot = bot.bot  # Access the actual bot object from Application
+
+        update = Update.de_json(data, tg_bot)
+
+        # Schedule update processing
         asyncio.run_coroutine_threadsafe(bot.process_update(update), asyncio.get_event_loop())
+
     except Exception as e:
         import traceback
         print(f"Error processing update: {e}")
@@ -42,6 +49,9 @@ def webhook():
         return "Internal Server Error", 500
 
     return "OK", 200
+
+
+
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
