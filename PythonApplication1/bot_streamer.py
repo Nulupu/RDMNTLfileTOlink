@@ -31,8 +31,8 @@ app = Flask(__name__)
 # --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
+        "🎉 Benvenut* al Radio Monell MP3 Streamer Bot! 🎧\n\n"
         f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
-        "🎉 Welcome to the Telegram MP3 Streamer Bot! 🎧\n\n"
         "📌 Cosa puoi fare:\n"
         "1️⃣ Mandami un link ad un messaggio con file MP3 da NLPTST.\n"
         "2️⃣ Ti restituisco un link streaming compatibile.\n\n"
