@@ -11,7 +11,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 import telegram
-from threading import Thread  # <-- Add this import
+from threading import Thread
 
 # --- Init ---
 load_dotenv()
@@ -108,9 +108,8 @@ if __name__ == '__main__':
     def run_flask():
         app.run(host='0.0.0.0', port=10000, use_reloader=False)
 
-    # Initialize bot
-    loop = asyncio.get_event_loop()
-    bot = loop.run_until_complete(init_bot())
+    # Initialize bot with asyncio.run() to ensure the event loop is managed properly
+    asyncio.run(init_bot())
 
     # Start Flask app and thread for the bot
     Thread(target=run_flask).start()
