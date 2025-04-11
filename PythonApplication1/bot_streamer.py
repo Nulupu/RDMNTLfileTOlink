@@ -88,7 +88,7 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
     print("🚀 Bot is polling...")
     await application.initialize()
-    await application.start_polling()  # Polling loop instead of using idle()
+    await application.run_polling()  # Corrected this line
 
 if __name__ == '__main__':
     # Start Flask streaming server in background
