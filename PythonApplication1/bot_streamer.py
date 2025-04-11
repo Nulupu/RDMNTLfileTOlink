@@ -1,6 +1,7 @@
 ﻿import os
 import re
 import asyncio
+from io import BytesIO
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
@@ -8,75 +9,75 @@ from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from threading import Thread
+import nest_asyncio
 
-# --- Load environment variables ---
+# --- Init ---
 load_dotenv()
+nest_asyncio.apply()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_NAME = "RDMNTL_session"  # Saved locally by Telethon
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
-
-# --- Chat username and link pattern ---
+SESSION_NAME = "RDMNTL_session"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# Flask app for handling webhook and file streaming
+# Flask app
 app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Webhook endpoint for Telegram bot"""
-    data = request.get_json(silent=True)  # Use get_json with silent=True to avoid exceptions
+    data = request.get_json(silent=True)
     if not data:
-        print("No JSON data received or malformed request")  # Debugging
         return "Bad Request: No JSON data received", 400
 
-    print(f"Incoming update: {data}")  # Debugging
     try:
-        update = Update.de_json(data, bot)
-        # Use asyncio.run_coroutine_threadsafe to process the update in the main event loop
+        update = Update.de_json(data, bot.bot)
         asyncio.run_coroutine_threadsafe(bot.process_update(update), asyncio.get_event_loop())
     except Exception as e:
         import traceback
-        print(f"Error processing update: {e}")  # Log the error message
-        print(traceback.format_exc())  # Log the full traceback
+        print(f"Error processing update: {e}")
+        print(traceback.format_exc())
         return "Internal Server Error", 500
 
     return "OK", 200
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
-    """Route to stream MP3 files"""
     async def get_stream():
         async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
             await client.start(bot_token=BOT_TOKEN)
             message = await client.get_messages(from_chat_id, ids=message_id)
+
             if not isinstance(message.media, MessageMediaDocument):
-                return "Message does not contain a valid document", 404
+                return Response("Not a valid document", status=404)
+
             doc: Document = message.media.document
             if doc.mime_type != 'audio/mpeg':
-                return "File is not an MP3", 415
-            temp_file_path = f"/tmp/{doc.id}.mp3"
-            await client.download_media(message, file=temp_file_path)
+                return Response("File is not an MP3", status=415)
 
-            def generate():
-                with open(temp_file_path, "rb") as f:
-                    while chunk := f.read(1024):
-                        yield chunk
-            return Response(generate(), content_type='audio/mpeg')
+            stream = BytesIO()
+            await client.download_media(message, file=stream)
+            stream.seek(0)
+
+            return Response(stream, content_type='audio/mpeg')
 
     return asyncio.run(get_stream())
 
+@app.route('/')
+def home():
+    return "Welcome to the Telegram MP3 Streamer!"
+
+# --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERI) e ti darò un link per lo streaming.\n\n"
+        f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
         "🎉 Welcome to the Telegram MP3 Streamer Bot! 🎧\n\n"
-        "📌 Here's what you can do:\n"
-        "1️⃣ Send me a link to a Telegram message containing an MP3 file.\n"
-        "2️⃣ I'll generate a streamable link for you to listen to the file online.\n\n"
-        f"💡 Tip: Make sure the link is from the {from_chat_id} chat and points to a valid MP3 file.\n\n"
-        "🚀 Let's get started! Send me a link now!"
+        "📌 Cosa puoi fare:\n"
+        "1️⃣ Mandami un link ad un messaggio con file MP3 da NLPTST.\n"
+        "2️⃣ Ti restituisco un link streaming compatibile.\n\n"
+        f"💡 Solo link da: https://t.me/{from_chat_id}"
     )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,31 +86,28 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not match:
         await update.message.reply_text(f"⚠️ Invia solo link validi da https://t.me/{from_chat_id}")
         return
+
     message_id = int(match.group(1))
     try:
         stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
         await update.message.reply_text(f"🎧 Ecco il link per lo streaming:\n{stream_url}")
     except Exception as e:
         print("Error:", e)
-        await update.message.reply_text("Errore durante l'elaborazione del link. Assicurati che il file sia accessibile.")
+        await update.message.reply_text("Errore nel generare il link di streaming.")
 
-@app.route('/')
-def home():
-    return "Welcome to the Telegram MP3 Streamer!"
-
+# --- Main ---
 if __name__ == '__main__':
-    # Start Flask app
+    # Start Flask in a separate thread
     def run_flask():
-        app.run(host='0.0.0.0', port=10000)  # Use a different port for Flask
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
+        app.run(host='0.0.0.0', port=10000)
+    Thread(target=run_flask).start()
 
-    # Start Telegram bot using webhook
+    # Start Telegram bot with webhook
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
     bot.run_webhook(
         listen="0.0.0.0",
-        port=11000,  # Use a different port for the bot
+        port=11000,
         webhook_url=f"{WEBHOOK_URL}/webhook"
     )
