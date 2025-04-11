@@ -1,15 +1,17 @@
 ﻿import os
 import re
 import asyncio
+import time
 from io import BytesIO
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 import telegram
+from threading import Thread  # <-- Add this import
 
 # --- Init ---
 load_dotenv()
@@ -54,7 +56,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Bot Initialization ---
 async def init_bot():
-    bot = Application.builder().token(BOT_TOKEN).build()
+    bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
 
@@ -102,21 +104,17 @@ def home():
 
 # --- Main ---
 if __name__ == '__main__':
-    # Initialize bot and start Flask app with asyncio.run()
-    async def main():
-        bot = await init_bot()
-        from threading import Thread
+    # Start Flask in a separate thread
+    def run_flask():
+        app.run(host='0.0.0.0', port=10000, use_reloader=False)
 
-        # Run Flask app in a separate thread
-        def run_flask():
-            app.run(host='0.0.0.0', port=10000)
+    # Initialize bot
+    loop = asyncio.get_event_loop()
+    bot = loop.run_until_complete(init_bot())
 
-        # Start Flask app and Thread for the bot
-        Thread(target=run_flask).start()
+    # Start Flask app and thread for the bot
+    Thread(target=run_flask).start()
 
-        # Prevent script from exiting
-        while True:
-            await asyncio.sleep(10)  # Non-blocking wait
-
-    # Run everything using asyncio
-    asyncio.run(main())
+    # Prevent script from exiting
+    while True:
+        time.sleep(10)
