@@ -7,7 +7,7 @@ from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from threading import Thread  # Import Thread to fix the NameError
+from threading import Thread
 
 # --- Load environment variables ---
 load_dotenv()
@@ -24,18 +24,6 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app for handling webhook and file streaming
 app = Flask(__name__)
 
-# Create a global event loop for the bot
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-# Start the global event loop in a separate thread
-def start_event_loop():
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
-
-event_loop_thread = Thread(target=start_event_loop, daemon=True)
-event_loop_thread.start()
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook endpoint for Telegram bot"""
@@ -47,8 +35,8 @@ def webhook():
     print(f"Incoming update: {data}")  # Debugging
     try:
         update = Update.de_json(data, bot)
-        # Use asyncio.run_coroutine_threadsafe to process the update in the global event loop
-        asyncio.run_coroutine_threadsafe(bot.process_update(update), loop)
+        # Process the update asynchronously
+        asyncio.create_task(bot.process_update(update))
     except Exception as e:
         import traceback
         print(f"Error processing update: {e}")  # Log the error message
