@@ -1,14 +1,18 @@
 ﻿import os
 import re
 import asyncio
+import time
 from io import BytesIO
+from threading import Thread
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from threading import Thread
+from telegram.ext import (
+    Application, ApplicationBuilder, CommandHandler,
+    MessageHandler, ContextTypes, filters
+)
 import nest_asyncio
 
 # --- Init ---
@@ -23,45 +27,31 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-import telegram
-
-telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
-
-# Flask app
+# --- Flask App ---
 app = Flask(__name__)
 
+# --- Telegram Bot Setup ---
+bot = ApplicationBuilder().token(BOT_TOKEN).build()
+bot.add_handler(CommandHandler("start", lambda u, c: start(u, c)))
+bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
 
+# Set the webhook only once
+async def setup_webhook():
+    await bot.initialize()
+    await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
 
+asyncio.run(setup_webhook())
 
+# --- Webhook Endpoint ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, bot.bot)
 
-    async def handle_update():
-        try:
-            await bot.initialize()
-        except RuntimeError:
-            pass  # Already initialized
-        await bot.process_update(update)
-
-    asyncio.run(handle_update())
+    asyncio.run(bot.process_update(update))
     return "OK", 200
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# --- Streaming Endpoint ---
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
     async def get_stream():
@@ -79,7 +69,6 @@ def stream_file(message_id):
             stream = BytesIO()
             await client.download_media(message, file=stream)
             stream.seek(0)
-
             return Response(stream, content_type='audio/mpeg')
 
     return asyncio.run(get_stream())
@@ -88,7 +77,7 @@ def stream_file(message_id):
 def home():
     return "Welcome to the Telegram MP3 Streamer!"
 
-# --- Telegram Bot Handlers ---
+# --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
@@ -114,19 +103,13 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Error:", e)
         await update.message.reply_text("Errore nel generare il link di streaming.")
 
-# --- Main ---
+# --- Launch ---
 if __name__ == '__main__':
-    # Start Flask in a separate thread
     def run_flask():
         app.run(host='0.0.0.0', port=10000)
+
     Thread(target=run_flask).start()
 
-    # Setup Telegram bot
-    bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    bot.add_handler(CommandHandler("start", start))
-    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
-
-    # Set webhook (run this once or protect with flag)
-    bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
-
-    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+    # Keep the main thread alive
+    while True:
+        time.sleep(10)
