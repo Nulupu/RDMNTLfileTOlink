@@ -32,6 +32,7 @@ app = Flask(__name__)
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(silent=True)
+    print(f"Webhook URL: {WEBHOOK_URL}")
     print(f"Incoming request: {data}")  # Debugging
     if not data:
         return "Bad Request: No JSON data received", 400
