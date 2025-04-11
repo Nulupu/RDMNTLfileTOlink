@@ -7,6 +7,7 @@ from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from threading import Thread  # Import Thread to fix the NameError
 
 # --- Load environment variables ---
 load_dotenv()
@@ -110,7 +111,6 @@ def home():
 
 if __name__ == '__main__':
     # Start Flask app
-    from threading import Thread
     def run_flask():
         app.run(host='0.0.0.0', port=10000)  # Use a different port for Flask
     flask_thread = Thread(target=run_flask)
@@ -125,4 +125,3 @@ if __name__ == '__main__':
         port=11000,  # Use a different port for the bot
         webhook_url=f"{WEBHOOK_URL}/webhook"
     )
-
