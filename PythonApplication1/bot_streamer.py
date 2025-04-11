@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from threading import Thread
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 import telegram
 
@@ -106,7 +105,7 @@ def home():
 if __name__ == '__main__':
     # Start Flask in a separate thread
     def run_flask():
-        app.run(host='0.0.0.0', port=10000)
+        app.run(host='0.0.0.0', port=10000, use_reloader=False)
 
     # Initialize bot
     loop = asyncio.get_event_loop()
