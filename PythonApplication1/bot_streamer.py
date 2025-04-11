@@ -26,22 +26,15 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 # Flask app
 app = Flask(__name__)
 
-
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json(silent=True)
     if not data:
-        return "Bad Request: No JSON", 400
+        return "Bad Request: No JSON data received", 400
 
     try:
-        # Create a telegram.Bot instance
-        tg_bot = bot.bot  # Access the actual bot object from Application
-
-        update = Update.de_json(data, tg_bot)
-
-        # Schedule update processing
+        update = Update.de_json(data, bot.bot)
         asyncio.run_coroutine_threadsafe(bot.process_update(update), asyncio.get_event_loop())
-
     except Exception as e:
         import traceback
         print(f"Error processing update: {e}")
@@ -49,9 +42,6 @@ def webhook():
         return "Internal Server Error", 500
 
     return "OK", 200
-
-
-
 
 @app.route('/stream/<int:message_id>')
 def stream_file(message_id):
@@ -107,15 +97,12 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main ---
 if __name__ == '__main__':
-    # Only run Telegram bot manually if not using Gunicorn
-    # Gunicorn will only start Flask app
+    # Start Flask in a separate thread
     def run_flask():
         app.run(host='0.0.0.0', port=10000)
+    Thread(target=run_flask).start()
 
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
-
-    # Start Telegram bot using webhook
+    # Start Telegram bot with webhook
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
