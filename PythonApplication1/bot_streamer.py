@@ -3,17 +3,15 @@ import re
 import asyncio
 import time
 from io import BytesIO
-from threading import Thread
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
-from telegram.ext import (
-    Application, ApplicationBuilder, CommandHandler,
-    MessageHandler, ContextTypes, filters
-)
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from threading import Thread
 import nest_asyncio
+import telegram
 
 # --- Init ---
 load_dotenv()
@@ -27,57 +25,13 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 from_chat_id = 'NLPTST'
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# --- Flask App ---
+# Set webhook (once)
+telegram.Bot(BOT_TOKEN).set_webhook(f"{WEBHOOK_URL}/webhook")
+
+# Flask app
 app = Flask(__name__)
 
-# --- Telegram Bot Setup ---
-bot = ApplicationBuilder().token(BOT_TOKEN).build()
-bot.add_handler(CommandHandler("start", lambda u, c: start(u, c)))
-bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
-
-# Set the webhook only once
-async def setup_webhook():
-    await bot.initialize()
-    await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
-
-asyncio.run(setup_webhook())
-
-# --- Webhook Endpoint ---
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, bot.bot)
-
-    asyncio.run(bot.process_update(update))
-    return "OK", 200
-
-# --- Streaming Endpoint ---
-@app.route('/stream/<int:message_id>')
-def stream_file(message_id):
-    async def get_stream():
-        async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-            await client.start(bot_token=BOT_TOKEN)
-            message = await client.get_messages(from_chat_id, ids=message_id)
-
-            if not isinstance(message.media, MessageMediaDocument):
-                return Response("Not a valid document", status=404)
-
-            doc: Document = message.media.document
-            if doc.mime_type != 'audio/mpeg':
-                return Response("File is not an MP3", status=415)
-
-            stream = BytesIO()
-            await client.download_media(message, file=stream)
-            stream.seek(0)
-            return Response(stream, content_type='audio/mpeg')
-
-    return asyncio.run(get_stream())
-
-@app.route('/')
-def home():
-    return "Welcome to the Telegram MP3 Streamer!"
-
-# --- Handlers ---
+# --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
@@ -103,13 +57,55 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Error:", e)
         await update.message.reply_text("Errore nel generare il link di streaming.")
 
-# --- Launch ---
+# Build bot application
+bot = ApplicationBuilder().token(BOT_TOKEN).build()
+bot.add_handler(CommandHandler("start", start))
+bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+
+# --- Webhook endpoint ---
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, bot.bot)
+
+    asyncio.run(bot.process_update(update))
+    return "OK", 200
+
+# --- MP3 streaming endpoint ---
+@app.route('/stream/<int:message_id>')
+def stream_file(message_id):
+    async def get_stream():
+        async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+            await client.start(bot_token=BOT_TOKEN)
+            message = await client.get_messages(from_chat_id, ids=message_id)
+
+            if not isinstance(message.media, MessageMediaDocument):
+                return Response("Not a valid document", status=404)
+
+            doc: Document = message.media.document
+            if doc.mime_type != 'audio/mpeg':
+                return Response("File is not an MP3", status=415)
+
+            stream = BytesIO()
+            await client.download_media(message, file=stream)
+            stream.seek(0)
+
+            return Response(stream, content_type='audio/mpeg')
+
+    return asyncio.run(get_stream())
+
+# --- Root page ---
+@app.route('/')
+def home():
+    return "Welcome to the Telegram MP3 Streamer!"
+
+# --- Main ---
 if __name__ == '__main__':
+    # Start Flask in a separate thread
     def run_flask():
         app.run(host='0.0.0.0', port=10000)
-
     Thread(target=run_flask).start()
 
-    # Keep the main thread alive
+    # Keep the script alive (important for Render)
     while True:
         time.sleep(10)
