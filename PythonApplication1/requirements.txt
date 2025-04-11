@@ -1,8 +1,9 @@
+pip>=23.0
 flask
 telethon
 requests
 python-dotenv
 aiohttp
-python-telegram-bot
+python-telegram-bot==20.3
 nest_asyncio
 gunicorn
