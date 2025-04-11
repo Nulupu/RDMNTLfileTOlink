@@ -1,17 +1,18 @@
 services:
   - type: web
-    name: telegram-mp3-bot
+    name: telegram-mp3-streamer
     env: python
-    region: frankfurt  # or oregon, singapore, etc.
+    region: oregon  # or choose your preferred region
+    plan: free
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -w 1 -b 0.0.0.0:10000 bot_streamer:app
+    startCommand: python bot_streamer.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        value: your_bot_token_here
       - key: API_ID
-        sync: false
+        value: your_api_id_here
       - key: API_HASH
-        sync: false
+        value: your_api_hash_here
       - key: WEBHOOK_URL
-        sync: false
-    plan: free
+        value: https://your-service-name.onrender.com
