@@ -4,7 +4,7 @@ services:
     env: python
     region: frankfurt  # or oregon, singapore, etc.
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot_streamer.py
+    startCommand: gunicorn -w 1 -b 0.0.0.0:10000 bot_streamer:app
     envVars:
       - key: BOT_TOKEN
         sync: false

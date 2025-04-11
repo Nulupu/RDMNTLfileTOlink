@@ -97,12 +97,15 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Main ---
 if __name__ == '__main__':
-    # Start Flask in a separate thread
+    # Only run Telegram bot manually if not using Gunicorn
+    # Gunicorn will only start Flask app
     def run_flask():
         app.run(host='0.0.0.0', port=10000)
-    Thread(target=run_flask).start()
 
-    # Start Telegram bot with webhook
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    # Start Telegram bot using webhook
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
