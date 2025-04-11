@@ -28,7 +28,6 @@
   <ItemGroup>
     <Content Include=".env" />
     <Content Include="requirements.txt" />
-    <Content Include="render.yaml" />
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="env\">

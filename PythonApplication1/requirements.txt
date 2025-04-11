@@ -1,8 +1,8 @@
-Flask==2.0.3
-python-telegram-bot==20.0
-telethon==1.24.0
-python-dotenv==0.21.0
-nest_asyncio==1.5.4
-requests==2.26.0
-aiohttp==3.8.1
-gunicorn==20.1.0
+flask
+telethon
+requests
+python-dotenv
+aiohttp
+python-telegram-bot
+python-telegram-bot[webhooks]
+nest_asyncio
