@@ -14,14 +14,19 @@ SET UP:
 
 2) Set a .env file with the tokens, channel name and session name like this:
 
--
+
 BOT_TOKEN=000000000000:AAAAAAbbbbbbbCCCCCCCddddddXXXXXXX
+
 API_ID=123456789
+
 API_HASH=aaaa123bbb456ccc789dddd
+
 WEBHOOK_URL=https://yourhosting.service.pussy
+
 SESSION_NAME=anysessionname
+
 from_chat_id=TELEGRANCHANNELNAME
--
+
 
 3) Once .env file is ready put it in the same folder of bot_streamer.py or in the settings of your hosting service.
 
