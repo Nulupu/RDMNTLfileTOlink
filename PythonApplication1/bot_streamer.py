@@ -55,6 +55,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type != "private":
+        return  # only respond to DMs
+
+
     msg = update.message.text
     match = link_pattern.match(msg)
     if not match:
