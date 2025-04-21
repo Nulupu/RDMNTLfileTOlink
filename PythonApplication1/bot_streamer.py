@@ -2,17 +2,17 @@
 import re
 import asyncio
 import logging
-from io import BytesIO
-from flask import Flask, request, Response
+from flask import Flask, request, Response, send_file
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import nest_asyncio
 from threading import Thread
+from werkzeug.utils import secure_filename
+import aiofiles
 
 # --- Init ---
 load_dotenv()
@@ -28,20 +28,18 @@ API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 SESSION_NAME = os.getenv("SESSION_NAME", "")
-from_chat_id =  os.getenv("from_chat_id", "")
-
+from_chat_id = os.getenv("from_chat_id", "")
+CACHE_FOLDER = "cached_mp3s"
+CACHE_TTL_HOURS = 2
 
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# Check for critical env vars
-if not BOT_TOKEN or not API_ID or not API_HASH or not WEBHOOK_URL:
-    raise RuntimeError("Missing one or more critical .env values")
-
 # Flask app
 app = Flask(__name__)
+os.makedirs(CACHE_FOLDER, exist_ok=True)
 
 # --- Stream Cache ---
-stream_cache = {}  # Stores {message_id: {"url": str, "expires_at": datetime}}
+stream_cache = {}  # {message_id: {"url": str, "expires_at": datetime, "file_path": str}}
 
 # --- Telegram Bot Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -56,8 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type != "private":
-        return  # only respond to DMs
-
+        return
 
     msg = update.message.text
     match = link_pattern.match(msg)
@@ -66,27 +63,17 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     message_id = int(match.group(1))
+    stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
 
-    # Check if the link is already cached
-    if message_id in stream_cache:
-        stream_data = stream_cache[message_id]
-        stream_url = stream_data["url"]
-        expires_at = stream_data["expires_at"]
-    else:
-        # Generate a new streaming link and set TTL
-        stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
-        expires_at = datetime.utcnow() + timedelta(hours=2)  # Set TTL to 2 hours
-        stream_cache[message_id] = {"url": stream_url, "expires_at": expires_at}
+    expires_at = datetime.utcnow() + timedelta(hours=CACHE_TTL_HOURS)
+    stream_cache[message_id] = {"url": stream_url, "expires_at": expires_at}
 
-    # Calculate remaining time for the countdown
-    remaining_time = expires_at - datetime.utcnow()
-    hours, remainder = divmod(remaining_time.seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
+    remaining = expires_at - datetime.utcnow()
+    hours, minutes = divmod(remaining.seconds // 60, 60)
 
-    # Send the response with the streaming link and countdown
     await update.message.reply_text(
         f"🎧 Ecco il link per lo streaming:\n{stream_url}\n\n"
-        f"⏳ Questo link scadrà tra: {hours} ore, {minutes} minuti e {seconds} secondi."
+        f"⏳ Questo link scadrà tra: {hours} ore, {minutes} minuti."
     )
 
 # --- Bot Initialization ---
@@ -94,7 +81,6 @@ async def init_bot():
     bot = ApplicationBuilder().token(BOT_TOKEN).build()
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
-
     await bot.initialize()
     await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
     return bot
@@ -105,7 +91,7 @@ def webhook():
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, bot.bot)
-        asyncio.run(bot.process_update(update))  # Use asyncio.run to process the update
+        asyncio.run(bot.process_update(update))
     except Exception as e:
         logger.error(f"[WEBHOOK ERROR] {e}", exc_info=True)
         return "Internal error", 500
@@ -114,47 +100,65 @@ def webhook():
 # --- MP3 streaming endpoint ---
 @app.route('/stream/<int:message_id>')
 async def stream_file(message_id):
-    async def get_stream():
-        try:
-            # Check if the link has expired
-            if message_id not in stream_cache or stream_cache[message_id]["expires_at"] < datetime.utcnow():
-                return Response("Link scaduto. Richiedi un nuovo link.", status=410)
+    cache_info = stream_cache.get(message_id)
+    expires_at = cache_info["expires_at"] if cache_info else datetime.utcnow()
+    if datetime.utcnow() > expires_at:
+        return Response("⛔ Link scaduto. Richiedi un nuovo link.", status=410)
 
+    file_path = os.path.join(CACHE_FOLDER, f"{message_id}.mp3")
+
+    if not os.path.exists(file_path):
+        try:
             client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
             await client.start(bot_token=BOT_TOKEN)
-
             message = await client.get_messages(from_chat_id, ids=message_id)
-            logger.info(f"Message found: {getattr(message, 'text', 'No text')}")
 
             if not isinstance(message.media, MessageMediaDocument):
-                logger.error("Not a valid document")
                 await client.disconnect()
-                return Response("Not a valid document", status=404)
+                return Response("❌ Non è un file valido.", status=404)
 
             doc: Document = message.media.document
-            if doc.mime_type != 'audio/mpeg':
-                logger.error(f"Invalid MIME type: {doc.mime_type}")
+            if doc.mime_type != "audio/mpeg":
                 await client.disconnect()
-                return Response("File is not an MP3", status=415)
+                return Response("❌ Il file non è un MP3 valido.", status=415)
 
-            stream = BytesIO()
-            await client.download_media(message, file=stream)
-            stream.seek(0)
-
-            logger.info("Streaming the audio file...")
+            async with aiofiles.open(file_path, 'wb') as f:
+                await client.download_media(message, file=f)
             await client.disconnect()
-            return Response(stream, content_type='audio/mpeg')
 
+            logger.info(f"📥 File scaricato e salvato: {file_path}")
         except Exception as e:
-            logger.error(f"[STREAM ERROR] {e}", exc_info=True)
-            return Response("Errore durante lo streaming.", status=500)
+            logger.error(f"[DOWNLOAD ERROR] {e}", exc_info=True)
+            return Response("❌ Errore durante il download.", status=500)
 
-    return await get_stream()
+    def generate_chunks():
+        with open(file_path, "rb") as f:
+            while chunk := f.read(4096):
+                yield chunk
+
+    logger.info(f"🎧 Streaming file: {file_path}")
+    return Response(generate_chunks(), content_type="audio/mpeg")
 
 # --- Root page ---
 @app.route('/')
 def home():
     return "🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧"
+
+# --- Cleanup Task ---
+async def cleanup_cache():
+    while True:
+        now = datetime.utcnow()
+        for msg_id, data in list(stream_cache.items()):
+            if now > data["expires_at"]:
+                path = os.path.join(CACHE_FOLDER, f"{msg_id}.mp3")
+                if os.path.exists(path):
+                    try:
+                        os.remove(path)
+                        logger.info(f"🗑️ File rimosso: {path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Impossibile rimuovere {path}: {e}")
+                stream_cache.pop(msg_id)
+        await asyncio.sleep(300)  # Check every 5 minutes
 
 # --- Main ---
 if __name__ == '__main__':
@@ -164,9 +168,6 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     bot = loop.run_until_complete(init_bot())
 
-    # Run Flask in a separate thread
     Thread(target=run_flask).start()
+    loop.create_task(cleanup_cache())
     loop.run_forever()
-
-
-
