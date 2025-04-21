@@ -15,7 +15,6 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 import aiofiles
-import httpx  # For self-ping
 
 # --- Init ---
 load_dotenv()
@@ -38,7 +37,8 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 app = FastAPI()
 os.makedirs(CACHE_FOLDER, exist_ok=True)
 
-# --- In-memory cache ---
+# --- In‑memory cache ---
+# message_id → {url, expires_at: datetime, file_path}
 stream_cache: dict[int, dict] = {}
 
 # --- Init Telethon client & Telegram Bot application ---
@@ -96,7 +96,7 @@ async def on_startup():
     await tele_client.start(bot_token=BOT_TOKEN)
     logger.info("✅ Telethon client started")
 
-    # 2) Start Telegram bot
+    # 2) Build and start telegram.ext bot in webhook mode
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(
@@ -110,21 +110,18 @@ async def on_startup():
     asyncio.create_task(cleanup_cache())
     logger.info("✅ Scheduled cleanup task")
 
-    # 4) Schedule self-ping task
-    asyncio.create_task(self_ping_task())
-    logger.info("✅ Scheduled self-ping task")
-
 # --- Webhook endpoint ---
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, bot_app.bot)
+    # schedule processing but don’t await here
     asyncio.create_task(bot_app.process_update(update))
     return PlainTextResponse("OK")
 
-# --- MP3 streaming endpoint ---
+# --- MP3 streaming endpoint with range support ---
 @app.get("/stream/{message_id}")
-async def stream_file(message_id: int):
+async def stream_file(message_id: int, range: str = None):
     info = stream_cache.get(message_id)
     if not info:
         raise HTTPException(404, "⚠️ Link non valido o mai richiesto.")
@@ -151,17 +148,37 @@ async def stream_file(message_id: int):
             logger.error("[DOWNLOAD ERROR] %s", e, exc_info=True)
             raise HTTPException(500, "❌ Errore durante il download.")
 
-    # Async generator to stream in 64KB chunks
+    # Handle range requests (seeking)
+    start_byte = 0
+    end_byte = os.path.getsize(fp) - 1
+    if range:
+        match = re.match(r"bytes=(\d+)-(\d+)?", range)
+        if match:
+            start_byte = int(match.group(1))
+            end_byte = int(match.group(2)) if match.group(2) else end_byte
+            if start_byte > end_byte or start_byte >= os.path.getsize(fp):
+                raise HTTPException(416, "Range not satisfiable")
+
+    # Async generator to stream in chunks
     async def generate():
         async with aiofiles.open(fp, "rb") as f:
-            while True:
-                chunk = await f.read(64 * 1024)
+            f.seek(start_byte)
+            remaining_bytes = end_byte - start_byte + 1
+            while remaining_bytes > 0:
+                chunk_size = min(64 * 1024, remaining_bytes)  # 64KB chunks
+                chunk = await f.read(chunk_size)
                 if not chunk:
                     break
+                remaining_bytes -= len(chunk)
                 yield chunk
 
-    logger.info("🎧 Streaming file: %s", fp)
-    return StreamingResponse(generate(), media_type="audio/mpeg")
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Range": f"bytes {start_byte}-{end_byte}/{os.path.getsize(fp)}",
+        "Content-Length": str(end_byte - start_byte + 1),
+    }
+    logger.info("🎧 Streaming file: %s (Range: %d-%d)", fp, start_byte, end_byte)
+    return StreamingResponse(generate(), media_type="audio/mpeg", headers=headers, status_code=206)
 
 # --- Root page ---
 @app.get("/")
@@ -181,18 +198,6 @@ async def cleanup_cache():
                     pass
                 stream_cache.pop(mid, None)
         await asyncio.sleep(300)
-
-# --- Self Ping Task (every 14 minutes) ---
-async def self_ping_task():
-    while True:
-        try:
-            url = f"{WEBHOOK_URL}/"
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url)
-                logger.info("🔁 Self-ping response: %s", resp.status_code)
-        except Exception as e:
-            logger.error("❌ Self-ping failed: %s", e)
-        await asyncio.sleep(840)  # 14 minutes
 
 # --- Run via Uvicorn ---
 if __name__ == "__main__":
