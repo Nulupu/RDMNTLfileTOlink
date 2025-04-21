@@ -15,6 +15,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 import aiofiles
+import httpx  # For self-ping
 
 # --- Init ---
 load_dotenv()
@@ -37,8 +38,7 @@ link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 app = FastAPI()
 os.makedirs(CACHE_FOLDER, exist_ok=True)
 
-# --- In‑memory cache ---
-# message_id → {url, expires_at: datetime, file_path}
+# --- In-memory cache ---
 stream_cache: dict[int, dict] = {}
 
 # --- Init Telethon client & Telegram Bot application ---
@@ -96,7 +96,7 @@ async def on_startup():
     await tele_client.start(bot_token=BOT_TOKEN)
     logger.info("✅ Telethon client started")
 
-    # 2) Build and start telegram.ext bot in webhook mode
+    # 2) Start Telegram bot
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(
@@ -110,12 +110,15 @@ async def on_startup():
     asyncio.create_task(cleanup_cache())
     logger.info("✅ Scheduled cleanup task")
 
+    # 4) Schedule self-ping task
+    asyncio.create_task(self_ping_task())
+    logger.info("✅ Scheduled self-ping task")
+
 # --- Webhook endpoint ---
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, bot_app.bot)
-    # schedule processing but don’t await here
     asyncio.create_task(bot_app.process_update(update))
     return PlainTextResponse("OK")
 
@@ -178,6 +181,18 @@ async def cleanup_cache():
                     pass
                 stream_cache.pop(mid, None)
         await asyncio.sleep(300)
+
+# --- Self Ping Task (every 14 minutes) ---
+async def self_ping_task():
+    while True:
+        try:
+            url = f"{WEBHOOK_URL}/"
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url)
+                logger.info("🔁 Self-ping response: %s", resp.status_code)
+        except Exception as e:
+            logger.error("❌ Self-ping failed: %s", e)
+        await asyncio.sleep(840)  # 14 minutes
 
 # --- Run via Uvicorn ---
 if __name__ == "__main__":
