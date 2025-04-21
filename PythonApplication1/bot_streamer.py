@@ -143,26 +143,36 @@ async def stream_file(message_id):
 
             # 🌀 Otherwise: fetch and stream
             client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-            await client.start(bot_token=BOT_TOKEN)
 
-            message = await client.get_messages(from_chat_id, ids=message_id)
-            if not isinstance(message.media, MessageMediaDocument):
-                await client.disconnect()
-                return Response("Not a valid document", status=404)
+            # Start the client in a new thread to avoid locking errors
+            def fetch_file():
+                try:
+                    client.start(bot_token=BOT_TOKEN)
+                    message = client.get_messages(from_chat_id, ids=message_id)
+                    
+                    if not isinstance(message.media, MessageMediaDocument):
+                        client.disconnect()
+                        return "Not a valid document"
+                    
+                    doc: Document = message.media.document
+                    if doc.mime_type != 'audio/mpeg':
+                        client.disconnect()
+                        return "File is not an MP3"
 
-            doc: Document = message.media.document
-            if doc.mime_type != 'audio/mpeg':
-                await client.disconnect()
-                return Response("File is not an MP3", status=415)
+                    with open(file_path, 'wb') as f:
+                        for chunk in client.iter_download(message, chunk_size=64 * 1024):
+                            f.write(chunk)
 
-            with open(file_path, 'wb') as f:
-                async for chunk in client.iter_download(message, chunk_size=64 * 1024):
-                    f.write(chunk)
-
-            await client.disconnect()
-            logger.info(f"Downloaded and cached file {file_path}")
-
-            return stream_local_file(file_path)
+                    client.disconnect()
+                    logger.info(f"Downloaded and cached file {file_path}")
+                except Exception as e:
+                    logger.error(f"[STREAM ERROR] {e}", exc_info=True)
+                    return "Error during file download"
+            
+            # Run the fetch_file function in a separate thread to avoid blocking
+            thread = Thread(target=fetch_file)
+            thread.start()
+            return Response("Streaming started...", status=200)  # Respond immediately
 
         except Exception as e:
             logger.error(f"[STREAM ERROR] {e}", exc_info=True)
