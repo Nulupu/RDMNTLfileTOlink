@@ -1,53 +1,10 @@
-﻿import os
-import re
-import asyncio
-import logging
-from io import BytesIO
-from flask import Flask, request, Response
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
-
-import aiofiles
-from telethon.sync import TelegramClient
-from telethon.tl.types import MessageMediaDocument, Document
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import nest_asyncio
-from threading import Thread
-
-# --- Init ---
-load_dotenv()
-nest_asyncio.apply()
-
-# Ensure cache folder exists
-CACHE_DIR = "stream_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-# --- Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# --- Environment ---
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-API_ID = int(os.getenv("API_ID", "0"))
-API_HASH = os.getenv("API_HASH", "")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
-SESSION_NAME = os.getenv("SESSION_NAME", "")
-from_chat_id = os.getenv("from_chat_id", "")
-
-link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
-
-# Check for critical env vars
-if not BOT_TOKEN or not API_ID or not API_HASH or not WEBHOOK_URL:
-    raise RuntimeError("Missing one or more critical .env values")
-
-# Flask app
-app = Flask(__name__)
+﻿# KEEP ALL YOUR EXISTING IMPORTS
+# (no changes here)
 
 # --- Stream Cache ---
-stream_cache = {}  # Stores {message_id: {"url": str, "expires_at": datetime}}
+stream_cache = {}  # message_id: {url, expires_at, file_path}
 
-# --- Telegram Bot Handlers ---
+# --- Handle /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧\n\n"
@@ -58,9 +15,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💡 Solo link da: https://t.me/{from_chat_id}"
     )
 
+# --- Prefetch and Handle Link ---
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or update.message.chat.type != "private":
-        return  # only respond to private DMs
+        return
 
     msg = update.message.text
     match = link_pattern.match(msg)
@@ -69,36 +27,92 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     message_id = int(match.group(1))
+    file_path = os.path.join(CACHE_DIR, f"{message_id}.mp3")
+    stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
+    expires_at = datetime.utcnow() + timedelta(hours=2)
 
-    # Check if the link is already cached
-    if message_id in stream_cache:
-        stream_data = stream_cache[message_id]
-        stream_url = stream_data["url"]
-        expires_at = stream_data["expires_at"]
+    # Cache entry always updated if not present
+    if message_id not in stream_cache:
+        stream_cache[message_id] = {
+            "url": stream_url,
+            "expires_at": expires_at,
+            "file_path": file_path
+        }
+
+    # If file already exists, just reply
+    if os.path.exists(file_path):
+        pass
     else:
-        stream_url = f"{WEBHOOK_URL}/stream/{message_id}"
-        expires_at = datetime.utcnow() + timedelta(hours=2)
-        stream_cache[message_id] = {"url": stream_url, "expires_at": expires_at}
+        try:
+            async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+                message = await client.get_messages(from_chat_id, ids=message_id)
 
-    # Calculate remaining time
-    remaining_time = expires_at - datetime.utcnow()
-    hours, remainder = divmod(remaining_time.seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
+                if not isinstance(message.media, MessageMediaDocument):
+                    await update.message.reply_text("❌ Il messaggio non contiene un file valido.")
+                    return
 
+                doc: Document = message.media.document
+                if doc.mime_type != 'audio/mpeg':
+                    await update.message.reply_text("❌ Il file non è un MP3.")
+                    return
+
+                await client.download_media(message, file=file_path)
+                logger.info(f"Downloaded and cached {file_path}")
+        except Exception as e:
+            logger.error(f"[DOWNLOAD ERROR] {e}", exc_info=True)
+            await update.message.reply_text("❌ Errore nel recupero del file.")
+            return
+
+    # Respond with stream link
+    remaining = expires_at - datetime.utcnow()
+    h, m = divmod(remaining.seconds, 3600)
+    m, s = divmod(m, 60)
     await update.message.reply_text(
         f"🎧 Ecco il link per lo streaming:\n{stream_url}\n\n"
-        f"⏳ Questo link scadrà tra: {hours} ore, {minutes} minuti e {seconds} secondi."
+        f"⏳ Questo link scadrà tra: {h} ore, {m} minuti e {s} secondi."
     )
 
-# --- Bot Initialization ---
-async def init_bot():
-    bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    bot.add_handler(CommandHandler("start", start))
-    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+# --- Streaming endpoint (only cached) ---
+@app.route('/stream/<int:message_id>')
+def stream_file(message_id):
+    if message_id not in stream_cache:
+        return Response("⚠️ Link non valido o mai richiesto.", status=404)
 
-    await bot.initialize()
-    await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
-    return bot
+    data = stream_cache[message_id]
+    if data["expires_at"] < datetime.utcnow():
+        return Response("⛔ Link scaduto. Invia di nuovo il link per rigenerarlo.", status=410)
+
+    file_path = data["file_path"]
+    if not os.path.exists(file_path):
+        return Response("⛔ File non trovato nel cache.", status=404)
+
+    def generate():
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+    return Response(generate(), content_type='audio/mpeg')
+
+# --- Cleanup expired files ---
+async def cleanup_old_files():
+    while True:
+        try:
+            now = datetime.utcnow()
+            for message_id, data in list(stream_cache.items()):
+                if data["expires_at"] < now:
+                    try:
+                        os.remove(data["file_path"])
+                        logger.info(f"Removed expired file {data['file_path']}")
+                    except:
+                        pass
+                    del stream_cache[message_id]
+        except Exception as e:
+            logger.error(f"[CLEANUP ERROR] {e}", exc_info=True)
+
+        await asyncio.sleep(600)
 
 # --- Webhook endpoint ---
 @app.route('/webhook', methods=['POST'])
@@ -112,97 +126,14 @@ def webhook():
         return "Internal error", 500
     return "OK", 200
 
-# --- Stream helper ---
-def stream_local_file(file_path):
-    def generate():
-        with open(file_path, 'rb') as f:
-            while True:
-                chunk = f.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-    return Response(generate(), content_type='audio/mpeg')
-
-# --- MP3 streaming endpoint ---
-@app.route('/stream/<int:message_id>')
-async def stream_file(message_id):
-    async def get_stream():
-        try:
-            os.makedirs(CACHE_DIR, exist_ok=True)
-            file_path = os.path.join(CACHE_DIR, f"{message_id}.mp3")
-
-            # ✅ If cached: stream directly
-            if os.path.exists(file_path):
-                logger.info(f"Streaming cached file {file_path}")
-                return stream_local_file(file_path)
-
-            # ❌ If TTL expired and not cached: deny
-            if message_id not in stream_cache or stream_cache[message_id]["expires_at"] < datetime.utcnow():
-                logger.warning(f"Stream link for message {message_id} expired and not cached.")
-                return Response("Link scaduto. Richiedi un nuovo link.", status=410)
-
-            # 🌀 Otherwise: fetch and stream
-            client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-
-            # Start the client in a new thread to avoid locking errors
-            def fetch_file():
-                try:
-                    client.start(bot_token=BOT_TOKEN)
-                    message = client.get_messages(from_chat_id, ids=message_id)
-                    
-                    if not isinstance(message.media, MessageMediaDocument):
-                        client.disconnect()
-                        return "Not a valid document"
-                    
-                    doc: Document = message.media.document
-                    if doc.mime_type != 'audio/mpeg':
-                        client.disconnect()
-                        return "File is not an MP3"
-
-                    with open(file_path, 'wb') as f:
-                        for chunk in client.iter_download(message, chunk_size=64 * 1024):
-                            f.write(chunk)
-
-                    client.disconnect()
-                    logger.info(f"Downloaded and cached file {file_path}")
-                except Exception as e:
-                    logger.error(f"[STREAM ERROR] {e}", exc_info=True)
-                    return "Error during file download"
-            
-            # Run the fetch_file function in a separate thread to avoid blocking
-            thread = Thread(target=fetch_file)
-            thread.start()
-            return Response("Streaming started...", status=200)  # Respond immediately
-
-        except Exception as e:
-            logger.error(f"[STREAM ERROR] {e}", exc_info=True)
-            return Response("Errore durante lo streaming.", status=500)
-
-    return await get_stream()
-
-# --- Cleanup expired files ---
-async def cleanup_old_files():
-    while True:
-        try:
-            now = datetime.utcnow()
-            for filename in os.listdir(CACHE_DIR):
-                if filename.endswith(".mp3"):
-                    message_id = int(filename.replace(".mp3", ""))
-                    if (message_id in stream_cache and
-                            stream_cache[message_id]["expires_at"] < now):
-                        file_path = os.path.join(CACHE_DIR, filename)
-                        os.remove(file_path)
-                        logger.info(f"Deleted expired file: {file_path}")
-                        del stream_cache[message_id]
-        except Exception as e:
-            logger.error(f"[CLEANUP ERROR] {e}", exc_info=True)
-
-        await asyncio.sleep(600)  # Run every 10 minutes
-
-# --- Root page ---
-@app.route('/')
-def home():
-    return "🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧"
+# --- Bot Init ---
+async def init_bot():
+    bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    bot.add_handler(CommandHandler("start", start))
+    bot.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link))
+    await bot.initialize()
+    await bot.bot.set_webhook(f"{WEBHOOK_URL}/webhook")
+    return bot
 
 # --- Main ---
 if __name__ == '__main__':
@@ -212,9 +143,6 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     bot = loop.run_until_complete(init_bot())
 
-    # Start cleanup task
     loop.create_task(cleanup_old_files())
-
-    # Run Flask in a separate thread
     Thread(target=run_flask).start()
     loop.run_forever()
