@@ -89,7 +89,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         try:
             async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-                message = await client.get_messages(from_chat_id, ids=message_id)
+                await client.start(bot_token=BOT_TOKEN)
 
                 if not isinstance(message.media, MessageMediaDocument):
                     await update.message.reply_text("❌ Il messaggio non contiene un file valido.")
