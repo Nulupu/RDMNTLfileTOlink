@@ -1,5 +1,49 @@
-﻿# KEEP ALL YOUR EXISTING IMPORTS
-# (no changes here)
+﻿import os
+import re
+import asyncio
+import logging
+from io import BytesIO
+from flask import Flask, request, Response
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
+
+import aiofiles
+from telethon.sync import TelegramClient
+from telethon.tl.types import MessageMediaDocument, Document
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import nest_asyncio
+from threading import Thread
+
+# --- Init ---
+load_dotenv()
+nest_asyncio.apply()
+
+# Ensure cache folder exists
+CACHE_DIR = "stream_cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+# --- Logging ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Environment ---
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+SESSION_NAME = os.getenv("SESSION_NAME", "")
+from_chat_id = os.getenv("from_chat_id", "")
+
+link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
+
+# Check for critical env vars
+if not BOT_TOKEN or not API_ID or not API_HASH or not WEBHOOK_URL:
+    raise RuntimeError("Missing one or more critical .env values")
+
+# Flask app
+app = Flask(__name__)
+
 
 # --- Stream Cache ---
 stream_cache = {}  # message_id: {url, expires_at, file_path}
