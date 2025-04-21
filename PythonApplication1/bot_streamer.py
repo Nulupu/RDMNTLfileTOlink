@@ -64,6 +64,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Received message: {update.message.text}")
+    logger.info(f"Chat type: {update.message.chat.type}")
+    ...
+
     if not update.message or update.message.chat.type != "private":
         return
 
@@ -92,8 +96,9 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         try:
             async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-                # Use bot token for authentication
+                logger.info("Starting TelegramClient with bot token...")
                 await client.start(bot_token=BOT_TOKEN)
+
 
                 # Retrieve the specific message from the channel
                 message = await client.get_messages(from_chat_id, ids=message_id)
