@@ -97,7 +97,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
                 logger.info("Starting TelegramClient with bot token...")
-                await client.start(bot_token=BOT_TOKEN)
+                await client.start()
 
 
                 # Retrieve the specific message from the channel
