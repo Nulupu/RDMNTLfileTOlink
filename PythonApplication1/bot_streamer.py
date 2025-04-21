@@ -96,11 +96,6 @@ def webhook():
         return "Internal error", 500
     return "OK", 200
 
-
-
-
-
-
 # --- MP3 streaming endpoint ---
 @app.route('/stream/<int:message_id>')
 async def stream_file(message_id):
@@ -151,9 +146,6 @@ async def stream_file(message_id):
         return asyncio.run(generate())
 
     return Response(sync_generate(), content_type="audio/mpeg")
-
-
-
 
 # --- Root page ---
 @app.route('/')
