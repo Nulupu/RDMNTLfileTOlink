@@ -19,6 +19,13 @@ from threading import Thread
 load_dotenv()
 nest_asyncio.apply()
 
+
+
+
+# Ensure cache folder exists
+CACHE_DIR = "stream_cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +37,7 @@ API_HASH = os.getenv("API_HASH", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 SESSION_NAME = os.getenv("SESSION_NAME", "")
 from_chat_id = os.getenv("from_chat_id", "")
-CACHE_DIR = "stream_cache"
+
 
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
