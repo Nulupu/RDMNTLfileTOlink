@@ -60,6 +60,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # --- Prefetch and Handle Link ---
+
+
+
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or update.message.chat.type != "private":
         return
@@ -89,9 +92,10 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         try:
             async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+                # Use bot token for authentication
                 await client.start(bot_token=BOT_TOKEN)
 
-                # 🔴 Recupera il messaggio specifico dal canale
+                # Retrieve the specific message from the channel
                 message = await client.get_messages(from_chat_id, ids=message_id)
 
                 if not isinstance(message.media, MessageMediaDocument):
@@ -118,6 +122,10 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎧 Ecco il link per lo streaming:\n{stream_url}\n\n"
         f"⏳ Questo link scadrà tra: {h} ore, {m} minuti e {s} secondi."
     )
+
+
+
+
 
 # --- Streaming endpoint (only cached) ---
 @app.route('/stream/<int:message_id>')
