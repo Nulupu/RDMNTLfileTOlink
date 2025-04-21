@@ -2,16 +2,16 @@
 import re
 import asyncio
 import logging
-from flask import Flask, request, Response
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from telethon.sync import TelegramClient
 from telethon.tl.types import MessageMediaDocument, Document
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import nest_asyncio
-from threading import Thread
 import aiofiles
+import nest_asyncio
 
 # --- Init ---
 load_dotenv()
@@ -33,8 +33,8 @@ CACHE_TTL_HOURS = 2
 
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
-# Flask app
-app = Flask(__name__)
+# FastAPI app
+app = FastAPI()
 os.makedirs(CACHE_FOLDER, exist_ok=True)
 
 # --- Stream Cache ---
@@ -85,24 +85,24 @@ async def init_bot():
     return bot
 
 # --- Webhook endpoint ---
-@app.route('/webhook', methods=['POST'])
-def webhook():
+@app.post("/webhook")
+async def webhook(request: Request):
     try:
-        data = request.get_json(force=True)
+        data = await request.json()
         update = Update.de_json(data, bot.bot)
-        asyncio.run(bot.process_update(update))
+        asyncio.create_task(bot.process_update(update))
     except Exception as e:
         logger.error(f"[WEBHOOK ERROR] {e}", exc_info=True)
-        return "Internal error", 500
-    return "OK", 200
+        raise HTTPException(status_code=500, detail="Internal error")
+    return PlainTextResponse("OK")
 
 # --- MP3 streaming endpoint ---
-@app.route('/stream/<int:message_id>')
-async def stream_file(message_id):
+@app.get("/stream/{message_id}")
+async def stream_file(message_id: int):
     cache_info = stream_cache.get(message_id)
     expires_at = cache_info["expires_at"] if cache_info else datetime.utcnow()
     if datetime.utcnow() > expires_at:
-        return Response("⛔ Link scaduto. Richiedi un nuovo link.", status=410)
+        raise HTTPException(status_code=410, detail="⛔ Link scaduto. Richiedi un nuovo link.")
 
     file_path = os.path.join(CACHE_FOLDER, f"{message_id}.mp3")
 
@@ -114,12 +114,12 @@ async def stream_file(message_id):
 
             if not isinstance(message.media, MessageMediaDocument):
                 await client.disconnect()
-                return Response("❌ Non è un file valido.", status=404)
+                raise HTTPException(status_code=404, detail="❌ Non è un file valido.")
 
             doc: Document = message.media.document
             if doc.mime_type != "audio/mpeg":
                 await client.disconnect()
-                return Response("❌ Il file non è un MP3 valido.", status=415)
+                raise HTTPException(status_code=415, detail="❌ Il file non è un MP3 valido.")
 
             async with aiofiles.open(file_path, 'wb') as f:
                 await client.download_media(message, file=f)
@@ -128,7 +128,7 @@ async def stream_file(message_id):
             logger.info(f"📥 File scaricato e salvato: {file_path}")
         except Exception as e:
             logger.error(f"[DOWNLOAD ERROR] {e}", exc_info=True)
-            return Response("❌ Errore durante il download.", status=500)
+            raise HTTPException(status_code=500, detail="❌ Errore durante il download.")
 
     # Streaming in chunks asynchronously
     async def generate():
@@ -140,17 +140,12 @@ async def stream_file(message_id):
                 yield chunk
 
     logger.info(f"🎧 Streaming file: {file_path}")
-
-    # Convert async generator to sync using asyncio.to_thread
-    def sync_generate():
-        return asyncio.run(generate())
-
-    return Response(sync_generate(), content_type="audio/mpeg")
+    return StreamingResponse(generate(), media_type="audio/mpeg")
 
 # --- Root page ---
-@app.route('/')
-def home():
-    return "🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧"
+@app.get("/")
+async def home():
+    return PlainTextResponse("🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧")
 
 # --- Cleanup Task ---
 async def cleanup_cache():
@@ -170,17 +165,13 @@ async def cleanup_cache():
 
 # --- Main ---
 if __name__ == '__main__':
-    def run_flask():
-        app.run(host='0.0.0.0', port=10000, use_reloader=False)
+    import uvicorn
 
     loop = asyncio.get_event_loop()
     bot = loop.run_until_complete(init_bot())
 
-    # Start Flask in a separate thread
-    Thread(target=run_flask).start()
-    
     # Start the cleanup task
     loop.create_task(cleanup_cache())
-    
-    # Run the event loop for the bot
-    loop.run_forever()
+
+    # Run the FastAPI app with uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=10000)
