@@ -19,9 +19,6 @@ from threading import Thread
 load_dotenv()
 nest_asyncio.apply()
 
-
-
-
 # Ensure cache folder exists
 CACHE_DIR = "stream_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -37,7 +34,6 @@ API_HASH = os.getenv("API_HASH", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 SESSION_NAME = os.getenv("SESSION_NAME", "")
 from_chat_id = os.getenv("from_chat_id", "")
-
 
 link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
@@ -117,11 +113,11 @@ def webhook():
     return "OK", 200
 
 # --- Stream helper ---
-async def stream_local_file(file_path):
-    async def generate():
-        async with aiofiles.open(file_path, mode='rb') as f:
+def stream_local_file(file_path):
+    def generate():
+        with open(file_path, 'rb') as f:
             while True:
-                chunk = await f.read(1024 * 64)
+                chunk = f.read(64 * 1024)
                 if not chunk:
                     break
                 yield chunk
@@ -138,7 +134,7 @@ async def stream_file(message_id):
             # ✅ If cached: stream directly
             if os.path.exists(file_path):
                 logger.info(f"Streaming cached file {file_path}")
-                return await stream_local_file(file_path)
+                return stream_local_file(file_path)
 
             # ❌ If TTL expired and not cached: deny
             if message_id not in stream_cache or stream_cache[message_id]["expires_at"] < datetime.utcnow():
@@ -159,14 +155,14 @@ async def stream_file(message_id):
                 await client.disconnect()
                 return Response("File is not an MP3", status=415)
 
-            async with aiofiles.open(file_path, mode='wb') as f:
-                async for chunk in client.iter_download(message, chunk_size=1024 * 64):
-                    await f.write(chunk)
+            with open(file_path, 'wb') as f:
+                async for chunk in client.iter_download(message, chunk_size=64 * 1024):
+                    f.write(chunk)
 
             await client.disconnect()
             logger.info(f"Downloaded and cached file {file_path}")
 
-            return await stream_local_file(file_path)
+            return stream_local_file(file_path)
 
         except Exception as e:
             logger.error(f"[STREAM ERROR] {e}", exc_info=True)
