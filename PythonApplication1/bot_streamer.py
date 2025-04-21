@@ -171,6 +171,11 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     bot = loop.run_until_complete(init_bot())
 
+    # Start Flask in a separate thread
     Thread(target=run_flask).start()
+    
+    # Start the cleanup task
     loop.create_task(cleanup_cache())
+    
+    # Run the event loop for the bot
     loop.run_forever()
