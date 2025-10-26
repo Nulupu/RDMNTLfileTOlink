@@ -30,7 +30,7 @@ WEBHOOK_URL   = os.getenv("WEBHOOK_URL", "")
 SESSION_NAME  = os.getenv("SESSION_NAME", "bot_session")
 from_chat_id  = os.getenv("from_chat_id", "")
 CACHE_FOLDER  = "cached_mp3s"
-CACHE_TTL_HOURS = 2
+CACHE_TTL_HOURS = 3
 
 link_pattern = re.compile(rf'https://t\.me/c/{from_chat_id}/(\d+)')
 
