@@ -32,7 +32,7 @@ from_chat_id  = os.getenv("from_chat_id", "")
 CACHE_FOLDER  = "cached_mp3s"
 CACHE_TTL_HOURS = 3
 
-link_pattern = re.compile(rf'https://t\.me/c/{from_chat_id}/(\d+)')
+link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
 
 # --- FastAPI app ---
 app = FastAPI()
@@ -49,11 +49,11 @@ bot_app = None  # will be set in startup
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎉 Benvenut* al Radio Montello MP3 Streamer Bot! 🎧\n\n"
-        f"Inviami un link da Radio Montello (es. https://t.me/c/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
+        f"Inviami un link da Radio Montello (es. https://t.me/{from_chat_id}/NUMERO) e ti darò un link per lo streaming.\n\n"
         "📌 Cosa puoi fare:\n"
-        f"1️⃣ copia e incolla un link (non forward) ad un messaggio con file MP3 da {from_chat_id}.\n"
+        f"1️⃣ copia e incolla un link (non forward) ad un messaggio con file MP3 da Chat - RadioMontello.\n"
         "2️⃣ Ti restituisco un link streaming compatibile.\n\n"
-        f"💡 Solo link da: https://t.me/c/{from_chat_id}"
+        f"💡 Solo link da: https://t.me/{from_chat_id}"
     )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,7 +64,7 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     m = link_pattern.match(msg)
     if not m:
         await update.message.reply_text(
-            f"⚠️ Invia solo link validi da https://t.me/c/{from_chat_id}"
+            f"⚠️ Invia solo link validi da https://t.me/{from_chat_id}"
         )
         return
 
