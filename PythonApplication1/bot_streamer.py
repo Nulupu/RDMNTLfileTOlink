@@ -32,7 +32,7 @@ from_chat_id  = os.getenv("from_chat_id", "")
 CACHE_FOLDER  = "cached_mp3s"
 CACHE_TTL_HOURS = 2
 
-link_pattern = re.compile(rf'https://t\.me/{from_chat_id}/(\d+)')
+link_pattern = re.compile(rf'https://t\.me/c/{from_chat_id}/(\d+)')
 
 # --- FastAPI app ---
 app = FastAPI()
